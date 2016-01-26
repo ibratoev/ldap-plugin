@@ -105,6 +105,7 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.springframework.dao.DataAccessException;
+import org.springframework.util.Assert;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
@@ -1293,6 +1294,49 @@ public class LDAPSecurityRealm extends AbstractPasswordBasedSecurityRealm {
             public String getDisplayName() {
                 return null;
             }
+        }
+    }
+
+    public static final class MultiFilterBasedLdapUserSearch implements LdapUserSearch {
+        private String searchBase;
+        private String searchFilter;
+        private InitialDirContextFactory initialDirContextFactory;
+
+        public MultiFilterBasedLdapUserSearch(String searchBase, String searchFilter,
+                                         InitialDirContextFactory initialDirContextFactory) {
+            Assert.notNull(initialDirContextFactory, "initialDirContextFactory must not be null");
+            Assert.notNull(searchFilter, "searchFilter must not be null.");
+            Assert.notNull(searchBase, "searchBase must not be null (an empty string is acceptable).");
+
+            this.searchFilter = searchFilter;
+            this.initialDirContextFactory = initialDirContextFactory;
+            this.searchBase = searchBase;
+        }
+
+        public LdapUserDetails searchForUser(String username) {
+            RuntimeException lastException = null;
+            String[] searchBaseParts = searchBase.split(";");
+
+            for(String searchBasePart : searchBaseParts) {
+                FilterBasedLdapUserSearch search = getFilterBasedLdapUserSearch(searchBasePart);
+                search.setSearchSubtree(true);
+                search.setSearchTimeLimit(6000);
+                try {
+                    return search.searchForUser(username);
+                } catch (RuntimeException e) {
+                    // TODO: log failed searches
+                    lastException = e;
+                }
+            }
+
+            if(lastException != null) {
+                throw lastException;
+            }
+            throw new RuntimeException("Error");
+        }
+
+        private FilterBasedLdapUserSearch getFilterBasedLdapUserSearch(final String searchBase) {
+            return new FilterBasedLdapUserSearch(searchBase, searchFilter, initialDirContextFactory);
         }
     }
 }
